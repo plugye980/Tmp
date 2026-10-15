@@ -32,7 +32,6 @@ h1, h2, h3, p, label, span {{ color: {TEXT}; }}
     unsafe_allow_html=True,
 )
 
-
 @st.cache_data
 def load_yearly():
     df = pd.read_csv(DATA_URL, encoding="utf-8-sig")
@@ -45,12 +44,16 @@ def load_yearly():
     yearly = yearly[(yearly["연도"] <= LAST_YEAR) & (yearly["count"] >= MIN_DAYS)]
     return yearly.rename(columns={"mean": "연평균기온", "count": "관측일"})
 
-
 yearly = load_yearly()
 x = yearly["연도"].to_numpy(dtype=float)
 y = yearly["연평균기온"].to_numpy()
 slope, intercept = np.polyfit(x, y, 1)
 r = np.corrcoef(x, y)[0, 1]
+
+RECENT_N = 20
+rx, ry = x[-RECENT_N:], y[-RECENT_N:]
+r_slope, r_intercept = np.polyfit(rx, ry, 1)
+per100, r_per100 = slope * 100, r_slope * 100
 
 st.title("🌡️ 기온 예측기")
 st.markdown(
@@ -69,8 +72,29 @@ st.markdown(
 )
 
 st.markdown(
+    f'<div class="card"><div class="cap">100년에 몇 도 오르는가</div>'
+    f'<div class="big">{per100:+.2f} ℃</div><div class="cap">전체 기간 회귀 직선 기준</div></div>',
+    unsafe_allow_html=True,
+)
+
+c1, c2 = st.columns(2)
+for col, label, val, a, b in [
+    (c1, "전체 기간", per100, x.min(), x.max()),
+    (c2, f"최근 {RECENT_N}년", r_per100, rx.min(), rx.max()),
+]:
+    col.markdown(
+        f'<div class="card"><div class="cap">{label} ({int(a)}–{int(b)})</div>'
+        f'<div class="r">{val:+.2f} ℃</div><div class="cap">/ 100년</div></div>',
+        unsafe_allow_html=True,
+    )
+st.markdown(
+    f'<div class="well">최근 {RECENT_N}년 기울기는 전체 기간의 <b>{r_per100 / per100:.1f}배</b>다.</div>',
+    unsafe_allow_html=True,
+)
+
+st.markdown(
     f'<div class="card"><div class="cap">상관계수 r (연도–연평균기온)</div><div class="r">{r:.3f}</div>'
-    f'<div class="cap">회귀식: 기온 = {slope:.4f} × 연도 {intercept:+.2f}</div></div>',
+    f'<div class="cap">회귀식: 기온 = {slope:.4f} × 연도 {intercept:+.2f} (전체 기간)</div></div>',
     unsafe_allow_html=True,
 )
 
@@ -79,13 +103,15 @@ fig = go.Figure()
 fig.add_trace(go.Scatter(x=x, y=y, mode="markers", name="연평균기온",
                          marker=dict(color=SKY, size=7, opacity=0.8)))
 fig.add_trace(go.Scatter(x=line_x, y=slope * line_x + intercept, mode="lines",
-                         name="회귀 직선", line=dict(color=MUTED, width=2)))
+                         name="회귀 직선(전체)", line=dict(color=MUTED, width=2)))
+fig.add_trace(go.Scatter(x=rx[[0, -1]], y=r_slope * rx[[0, -1]] + r_intercept, mode="lines",
+                         name=f"최근 {RECENT_N}년 추세", line=dict(color=BRASS, width=3, dash="dot")))
 fig.add_trace(go.Scatter(x=[year], y=[pred], mode="markers", name=f"{year}년 예측",
                          marker=dict(color=BRASS, size=14, symbol="star")))
 fig.update_layout(
     paper_bgcolor=WELL, plot_bgcolor=WELL, font=dict(color=TEXT),
-    xaxis=dict(title="연도", gridcolor="#2a3037", zeroline=False),
-    yaxis=dict(title="연평균기온(℃)", gridcolor="#2a3037", zeroline=False),
-    legend=dict(orientation="h", y=1.08), margin=dict(l=20, r=20, t=40, b=20), height=460,
+    xaxis=dict(title="연도", gridcolor="#2a3037", zeroline=False, automargin=True),
+    yaxis=dict(title="연평균기온(℃)", gridcolor="#2a3037", zeroline=False, automargin=True),
+    legend=dict(orientation="h", y=1.1, font=dict(color=TEXT)), margin=dict(l=60, r=20, t=50, b=50), height=460,
 )
-st.plotly_chart(fig, width="stretch")
+st.plotly_chart(fig, width="stretch", theme=None)
